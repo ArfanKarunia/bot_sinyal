@@ -4,30 +4,51 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // Pastikan payload memiliki objek pesan dan teks
-    if (body.message && body.message.text) {
+    if (body.message) {
       const chatId = body.message.chat.id.toString();
-      const text = body.message.text;
 
-      // 1. Validasi: Hanya proses jika pesan datang dari Grup Privat kalian berdua
+      // Validasi dari Grup Privat
       if (chatId === process.env.PRIVATE_GROUP_ID) {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        const publicChannelId = process.env.PUBLIC_CHANNEL_ID; // Sesuai nama variabel barumu di Vercel
         
-        // 2. Tembak pesan ke Telegram Public Channel
-        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chat_id: process.env.PUBLIC_CHANNEL_ID,
-            text: text,
-            // parse_mode: 'HTML' // Bisa diaktifkan kalau kamu suka format bold/italic
-          }),
-        });
+        let endpoint = '';
+        let payload: any = {
+          chat_id: publicChannelId,
+        };
+
+        // 1. Cek apakah pesan berupa Gambar (Photo)
+        if (body.message.photo) {
+          endpoint = 'sendPhoto';
+          // Ambil resolusi gambar terbesar (selalu berada di index terakhir array)
+          payload.photo = body.message.photo[body.message.photo.length - 1].file_id;
+          // Ambil caption (teks) jika ada
+          payload.caption = body.message.caption || '';
+        } 
+        // 2. Cek apakah pesan berupa GIF / Dokumen
+        else if (body.message.animation || body.message.document) {
+           endpoint = 'sendDocument';
+           const doc = body.message.animation || body.message.document;
+           payload.document = doc.file_id;
+           payload.caption = body.message.caption || '';
+        }
+        // 3. Cek apakah pesan berupa Teks biasa
+        else if (body.message.text) {
+          endpoint = 'sendMessage';
+          payload.text = body.message.text;
+        }
+
+        // Eksekusi pengiriman ke Channel Publik
+        if (endpoint) {
+          await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        }
       }
     }
 
-    // Selalu kembalikan status 200 OK agar Telegram tidak mengirim ulang (retry) webhook
     return NextResponse.json({ status: 'ok' });
   } catch (error) {
     console.error('Error handling webhook:', error);
